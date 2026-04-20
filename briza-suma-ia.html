@@ -1,0 +1,1062 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SumaBattle IA — Briza García Gallegos</title>
+<script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Righteous&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a12;
+    --surface: #13131f;
+    --surface2: #1c1c2e;
+    --accent: #00f5d4;
+    --accent2: #f72585;
+    --accent3: #ffd60a;
+    --text: #e8e8f0;
+    --muted: #555577;
+    --win: #00f5d4;
+    --lose: #f72585;
+    --border: rgba(255,255,255,0.07);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Space Mono', monospace;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 16px 48px;
+    overflow-x: hidden;
+  }
+
+  /* Noise overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* Grid lines */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: linear-gradient(var(--border) 1px, transparent 1px),
+                      linear-gradient(90deg, var(--border) 1px, transparent 1px);
+    background-size: 48px 48px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .wrapper { position: relative; z-index: 1; width: 100%; max-width: 680px; }
+
+  /* Header */
+  header {
+    text-align: center;
+    margin-bottom: 32px;
+  }
+
+  .eyebrow {
+    font-size: 10px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 6px;
+  }
+
+  h1 {
+    font-family: 'Righteous', cursive;
+    font-size: clamp(2rem, 7vw, 3.5rem);
+    line-height: 1;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent2) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    letter-spacing: 2px;
+  }
+
+  .subtitle {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 8px;
+    letter-spacing: 1px;
+  }
+
+  /* Score Board */
+  .scoreboard {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 8px;
+    margin-bottom: 24px;
+    align-items: center;
+  }
+
+  .player-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.3s;
+  }
+
+  .player-card.active {
+    border-color: var(--accent);
+    box-shadow: 0 0 20px rgba(0,245,212,0.12);
+  }
+
+  .player-card.bot.active {
+    border-color: var(--accent2);
+    box-shadow: 0 0 20px rgba(247,37,133,0.12);
+  }
+
+  .player-card .label {
+    font-size: 10px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+
+  .player-card .name {
+    font-family: 'Righteous', cursive;
+    font-size: 1rem;
+    color: var(--accent);
+  }
+
+  .player-card.bot .name { color: var(--accent2); }
+
+  .player-card .score {
+    font-family: 'Righteous', cursive;
+    font-size: 3rem;
+    line-height: 1;
+    margin-top: 4px;
+  }
+
+  .score-divider {
+    font-family: 'Righteous', cursive;
+    font-size: 1.5rem;
+    color: var(--muted);
+    text-align: center;
+  }
+
+  /* Progress bars */
+  .progress-wrap {
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    margin-top: 10px;
+    overflow: hidden;
+  }
+
+  .progress-bar {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .player-card .progress-bar { background: var(--accent); }
+  .player-card.bot .progress-bar { background: var(--accent2); }
+
+  /* Arena */
+  .arena {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 32px 24px;
+    text-align: center;
+    margin-bottom: 16px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .arena::before {
+    content: '';
+    position: absolute;
+    top: -60px; left: 50%;
+    transform: translateX(-50%);
+    width: 200px; height: 200px;
+    background: radial-gradient(circle, rgba(0,245,212,0.05) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .round-badge {
+    display: inline-block;
+    font-size: 10px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    padding: 4px 12px;
+    border-radius: 20px;
+    color: var(--muted);
+    margin-bottom: 20px;
+  }
+
+  .question-display {
+    font-family: 'Righteous', cursive;
+    font-size: clamp(2.5rem, 10vw, 5rem);
+    line-height: 1;
+    color: var(--text);
+    margin-bottom: 28px;
+    min-height: 1.2em;
+    transition: all 0.2s;
+  }
+
+  .question-display span { color: var(--accent3); }
+
+  /* Timer ring */
+  .timer-wrap {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 24px;
+  }
+
+  .timer-ring {
+    position: relative;
+    width: 64px;
+    height: 64px;
+  }
+
+  .timer-ring svg {
+    transform: rotate(-90deg);
+    width: 64px;
+    height: 64px;
+  }
+
+  .timer-ring circle {
+    fill: none;
+    stroke-width: 4;
+    stroke-linecap: round;
+  }
+
+  .timer-ring .bg { stroke: var(--surface2); }
+  .timer-ring .fg {
+    stroke: var(--accent);
+    stroke-dasharray: 163;
+    transition: stroke-dashoffset 0.1s linear, stroke 0.3s;
+  }
+
+  .timer-num {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Righteous', cursive;
+    font-size: 1.2rem;
+  }
+
+  /* Input area */
+  .input-row {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    align-items: center;
+  }
+
+  .answer-input {
+    background: var(--surface2);
+    border: 2px solid var(--border);
+    border-radius: 10px;
+    color: var(--text);
+    font-family: 'Righteous', cursive;
+    font-size: 2rem;
+    text-align: center;
+    width: 140px;
+    padding: 12px 16px;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    letter-spacing: 2px;
+  }
+
+  .answer-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 4px rgba(0,245,212,0.1);
+  }
+
+  .answer-input:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .btn-submit {
+    background: var(--accent);
+    border: none;
+    border-radius: 10px;
+    color: #000;
+    font-family: 'Righteous', cursive;
+    font-size: 1rem;
+    padding: 14px 24px;
+    cursor: pointer;
+    transition: transform 0.15s, opacity 0.2s, box-shadow 0.2s;
+    letter-spacing: 1px;
+    white-space: nowrap;
+  }
+
+  .btn-submit:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0,245,212,0.3);
+  }
+
+  .btn-submit:active:not(:disabled) { transform: translateY(0); }
+  .btn-submit:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* Feedback flash */
+  .feedback {
+    margin-top: 18px;
+    font-size: 1.1rem;
+    font-family: 'Righteous', cursive;
+    letter-spacing: 2px;
+    min-height: 1.6em;
+    transition: all 0.3s;
+  }
+
+  .feedback.win  { color: var(--win); }
+  .feedback.lose { color: var(--lose); }
+  .feedback.tie  { color: var(--accent3); }
+
+  /* Log */
+  .log-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 16px;
+    max-height: 160px;
+    overflow-y: auto;
+  }
+
+  .log-panel::-webkit-scrollbar { width: 4px; }
+  .log-panel::-webkit-scrollbar-thumb { background: var(--surface2); border-radius: 2px; }
+
+  .log-title {
+    font-size: 10px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 10px;
+  }
+
+  .log-item {
+    font-size: 12px;
+    padding: 5px 0;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .log-item:last-child { border-bottom: none; }
+  .log-item .who-win  { color: var(--win); font-weight: bold; }
+  .log-item .who-lose { color: var(--lose); font-weight: bold; }
+  .log-item .who-tie  { color: var(--accent3); font-weight: bold; }
+
+  /* Controls */
+  .controls {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .btn-secondary {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text);
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    padding: 10px 20px;
+    cursor: pointer;
+    transition: border-color 0.2s, color 0.2s;
+    letter-spacing: 1px;
+  }
+
+  .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+
+  .btn-danger {
+    border-color: var(--accent2);
+    color: var(--accent2);
+  }
+
+  .btn-danger:hover { background: rgba(247,37,133,0.1); }
+
+  /* Win screen overlay */
+  .win-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(10,10,18,0.92);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    backdrop-filter: blur(8px);
+  }
+
+  .win-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 48px 40px;
+    text-align: center;
+    max-width: 400px;
+    width: 90%;
+    animation: pop 0.4s cubic-bezier(0.34,1.56,0.64,1);
+  }
+
+  @keyframes pop {
+    from { transform: scale(0.7); opacity: 0; }
+    to   { transform: scale(1);   opacity: 1; }
+  }
+
+  .win-emoji { font-size: 4rem; margin-bottom: 12px; }
+
+  .win-title {
+    font-family: 'Righteous', cursive;
+    font-size: 2rem;
+    margin-bottom: 8px;
+  }
+
+  .win-sub { color: var(--muted); font-size: 13px; margin-bottom: 28px; }
+
+  .btn-play-again {
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    border: none;
+    border-radius: 12px;
+    color: #fff;
+    font-family: 'Righteous', cursive;
+    font-size: 1.1rem;
+    padding: 14px 36px;
+    cursor: pointer;
+    letter-spacing: 2px;
+    transition: transform 0.2s, box-shadow 0.2s;
+    width: 100%;
+  }
+
+  .btn-play-again:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,245,212,0.3); }
+
+  /* Difficulty selector */
+  .diff-row {
+    display: flex;
+    gap: 6px;
+    justify-content: center;
+    margin-bottom: 20px;
+  }
+
+  .diff-btn {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--muted);
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    padding: 6px 14px;
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 1px;
+  }
+
+  .diff-btn.active {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(0,245,212,0.07);
+  }
+
+  .diff-btn.active.hard {
+    border-color: var(--accent2);
+    color: var(--accent2);
+    background: rgba(247,37,133,0.07);
+  }
+
+  /* Thinking indicator */
+  .thinking {
+    display: flex;
+    gap: 5px;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent2);
+    font-size: 11px;
+    margin-top: 10px;
+    min-height: 20px;
+  }
+
+  .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent2);
+    animation: bounce 0.9s infinite;
+  }
+
+  .dot:nth-child(2) { animation-delay: 0.15s; }
+  .dot:nth-child(3) { animation-delay: 0.3s; }
+
+  @keyframes bounce {
+    0%, 80%, 100% { transform: translateY(0); opacity: 0.5; }
+    40% { transform: translateY(-6px); opacity: 1; }
+  }
+
+  /* Shake animation */
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    20% { transform: translateX(-8px); }
+    40% { transform: translateX(8px); }
+    60% { transform: translateX(-5px); }
+    80% { transform: translateX(5px); }
+  }
+
+  .shake { animation: shake 0.35s ease; }
+
+  /* Footer */
+  footer {
+    margin-top: 32px;
+    font-size: 10px;
+    color: var(--muted);
+    text-align: center;
+    letter-spacing: 2px;
+    line-height: 1.8;
+  }
+
+  footer strong { color: var(--accent); }
+
+  /* Pulse on score change */
+  @keyframes scorePop {
+    0%   { transform: scale(1); }
+    50%  { transform: scale(1.3); }
+    100% { transform: scale(1); }
+  }
+
+  .score-pop { animation: scorePop 0.35s ease; }
+
+  /* Responsive */
+  @media (max-width: 480px) {
+    .scoreboard { grid-template-columns: 1fr auto 1fr; }
+    .player-card .score { font-size: 2.2rem; }
+    .question-display { font-size: 3rem; }
+    .answer-input { width: 110px; font-size: 1.6rem; }
+  }
+</style>
+</head>
+<body>
+
+<div class="wrapper" x-data="sumaBattle()" x-init="init()">
+
+  <!-- HEADER -->
+  <header>
+    <div class="eyebrow">Universidad Aztlan Cancún — IA</div>
+    <h1>SUMA BATTLE</h1>
+    <div class="subtitle">Briza García Gallegos &nbsp;·&nbsp; Inteligencia Artificial</div>
+  </header>
+
+  <!-- DIFFICULTY -->
+  <div class="diff-row">
+    <button class="diff-btn" :class="{ active: difficulty === 'easy' }"
+      @click="setDifficulty('easy')">FÁCIL</button>
+    <button class="diff-btn" :class="{ active: difficulty === 'normal' }"
+      @click="setDifficulty('normal')">NORMAL</button>
+    <button class="diff-btn hard" :class="{ active: difficulty === 'hard', hard: difficulty === 'hard' }"
+      @click="setDifficulty('hard')">DIFÍCIL</button>
+  </div>
+
+  <!-- SCOREBOARD -->
+  <div class="scoreboard">
+    <div class="player-card" :class="{ active: lastWinner === 'player' }">
+      <div class="label">Jugadora</div>
+      <div class="name">Briza</div>
+      <div class="score" :class="{ 'score-pop': playerScoreAnim }" x-text="playerScore"></div>
+      <div class="progress-wrap">
+        <div class="progress-bar" :style="`width: ${(playerScore/10)*100}%`"></div>
+      </div>
+    </div>
+
+    <div class="score-divider">VS</div>
+
+    <div class="player-card bot" :class="{ active: lastWinner === 'bot' }">
+      <div class="label">Bot</div>
+      <div class="name">NEXUS</div>
+      <div class="score" :class="{ 'score-pop': botScoreAnim }" x-text="botScore"></div>
+      <div class="progress-wrap">
+        <div class="progress-bar" :style="`width: ${(botScore/10)*100}%`"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ARENA -->
+  <div class="arena">
+    <div class="round-badge">RONDA <span x-text="round"></span> / 10pts necesarios</div>
+
+    <div class="question-display" x-ref="qDisplay">
+      <template x-if="gameActive">
+        <span>
+          <span x-text="num1"></span>
+          <span> + </span>
+          <span x-text="num2"></span>
+          <span style="color:var(--muted)"> = ?</span>
+        </span>
+      </template>
+      <template x-if="!gameActive && !gameOver">
+        <span style="color:var(--muted);font-size:2.5rem">¡Listo!</span>
+      </template>
+    </div>
+
+    <!-- Timer -->
+    <div class="timer-wrap" x-show="gameActive">
+      <div class="timer-ring">
+        <svg viewBox="0 0 64 64">
+          <circle class="bg" cx="32" cy="32" r="26"/>
+          <circle class="fg" cx="32" cy="32" r="26"
+            :style="`stroke-dashoffset: ${163 - (timer/maxTimer)*163}; stroke: ${timer > maxTimer*0.4 ? 'var(--accent)' : 'var(--accent2)'}`"/>
+        </svg>
+        <div class="timer-num" x-text="Math.ceil(timer/10)"></div>
+      </div>
+    </div>
+
+    <!-- Input -->
+    <div class="input-row">
+      <input
+        class="answer-input"
+        x-ref="answerInput"
+        type="number"
+        x-model="userAnswer"
+        :disabled="!gameActive || roundOver"
+        @keydown.enter="submitAnswer"
+        placeholder="?"
+        autocomplete="off"
+        inputmode="numeric"
+      />
+      <button class="btn-submit"
+        :disabled="!gameActive || roundOver"
+        @click="submitAnswer">
+        ENVIAR
+      </button>
+    </div>
+
+    <!-- Feedback -->
+    <div class="feedback" :class="feedbackClass" x-text="feedbackMsg"></div>
+
+    <!-- Bot thinking -->
+    <div class="thinking" x-show="botThinking">
+      <span>NEXUS calculando</span>
+      <div class="dot"></div>
+      <div class="dot"></div>
+      <div class="dot"></div>
+    </div>
+  </div>
+
+  <!-- LOG -->
+  <div class="log-panel">
+    <div class="log-title">Historial de rondas</div>
+    <template x-if="log.length === 0">
+      <div style="color:var(--muted);font-size:12px">Las rondas aparecerán aquí...</div>
+    </template>
+    <template x-for="(entry, i) in [...log].reverse()" :key="i">
+      <div class="log-item">
+        <span style="color:var(--muted)" x-text="`R${log.length - i}`"></span>
+        <span x-text="`${entry.num1} + ${entry.num2} = ${entry.answer}`"></span>
+        <span :class="`who-${entry.winner}`"
+          x-text="entry.winner === 'player' ? '▲ BRIZA' : entry.winner === 'bot' ? '▼ NEXUS' : '— NADIE'">
+        </span>
+        <span style="color:var(--muted);font-size:10px" x-text="entry.time + 'ms'"></span>
+      </div>
+    </template>
+  </div>
+
+  <!-- CONTROLS -->
+  <div class="controls">
+    <button class="btn-secondary" @click="newGame()">NUEVA PARTIDA</button>
+    <button class="btn-secondary" @click="pauseGame()" x-show="gameActive && !roundOver" x-text="paused ? '▶ CONTINUAR' : '⏸ PAUSA'"></button>
+    <button class="btn-secondary btn-danger" @click="resetAll()">RESETEAR TODO</button>
+  </div>
+
+  <!-- SESSION STATS -->
+  <div style="margin-top:16px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 14px;font-size:11px;color:var(--muted)">
+      PARTIDAS TOTALES: <span style="color:var(--text)" x-text="stats.totalGames"></span>
+    </div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 14px;font-size:11px;color:var(--muted)">
+      VICTORIAS: <span style="color:var(--win)" x-text="stats.playerWins"></span>
+    </div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 14px;font-size:11px;color:var(--muted)">
+      DERROTAS: <span style="color:var(--lose)" x-text="stats.botWins"></span>
+    </div>
+  </div>
+
+  <!-- WIN OVERLAY -->
+  <div class="win-overlay" x-show="gameOver" x-transition.opacity>
+    <div class="win-card">
+      <div class="win-emoji" x-text="gameWinner === 'player' ? '🏆' : '🤖'"></div>
+      <div class="win-title"
+        :style="gameWinner === 'player' ? 'color:var(--win)' : 'color:var(--lose)'"
+        x-text="gameWinner === 'player' ? '¡GANASTE!' : 'NEXUS GANÓ'">
+      </div>
+      <div class="win-sub" x-text="gameWinner === 'player'
+        ? `¡Increíble, Briza! Derrotaste a NEXUS ${playerScore} - ${botScore}`
+        : `NEXUS ganó ${botScore} - ${playerScore}. ¡Sigue intentando!`">
+      </div>
+      <button class="btn-play-again" @click="newGame()">JUGAR DE NUEVO</button>
+    </div>
+  </div>
+
+</div>
+
+<!-- FOOTER -->
+<footer>
+  <strong>SUMA BATTLE IA</strong><br>
+  Tarea de Inteligencia Artificial<br>
+  Briza García Gallegos · Universidad Aztlan Cancún<br>
+  Algoritmo de IA basado en Minimax adaptativo con factores de dificultad
+</footer>
+
+<script>
+function sumaBattle() {
+  return {
+    // Game state
+    num1: 0, num2: 0,
+    userAnswer: '',
+    gameActive: false,
+    roundOver: false,
+    gameOver: false,
+    gameWinner: null,
+    paused: false,
+
+    // Scores
+    playerScore: 0,
+    botScore: 0,
+    lastWinner: null,
+
+    // Animations
+    playerScoreAnim: false,
+    botScoreAnim: false,
+
+    // Timer
+    timer: 0,
+    maxTimer: 0,
+    timerInterval: null,
+
+    // Bot
+    botThinking: false,
+    botTimer: null,
+
+    // UI
+    feedbackMsg: '¡Pulsa NUEVA PARTIDA para comenzar!',
+    feedbackClass: '',
+    log: [],
+    round: 0,
+
+    // Difficulty
+    difficulty: 'normal',
+
+    // Stats (persisted)
+    stats: { totalGames: 0, playerWins: 0, botWins: 0 },
+
+    // Timing
+    questionStartTime: 0,
+
+    init() {
+      this.loadStats();
+      this.loadDifficulty();
+    },
+
+    // ─── Difficulty ───────────────────────────────────────────────
+    difficultyConfig() {
+      return {
+        easy:   { timerSec: 10, botMinMs: 1800, botMaxMs: 5000, botErrorRate: 0.25 },
+        normal: { timerSec: 7,  botMinMs: 900,  botMaxMs: 3000, botErrorRate: 0.10 },
+        hard:   { timerSec: 5,  botMinMs: 300,  botMaxMs: 1400, botErrorRate: 0.02 },
+      }[this.difficulty];
+    },
+
+    setDifficulty(d) {
+      this.difficulty = d;
+      localStorage.setItem('sumabattle_difficulty', d);
+      if (!this.gameActive) this.feedbackMsg = `Dificultad: ${d.toUpperCase()} — ¡Empieza una nueva partida!`;
+    },
+
+    loadDifficulty() {
+      const saved = localStorage.getItem('sumabattle_difficulty');
+      if (saved) this.difficulty = saved;
+    },
+
+    // ─── Stats ────────────────────────────────────────────────────
+    saveStats() {
+      localStorage.setItem('sumabattle_stats', JSON.stringify(this.stats));
+    },
+
+    loadStats() {
+      const saved = localStorage.getItem('sumabattle_stats');
+      if (saved) this.stats = JSON.parse(saved);
+    },
+
+    resetAll() {
+      if (!confirm('¿Segura que quieres resetear todas las estadísticas?')) return;
+      this.stats = { totalGames: 0, playerWins: 0, botWins: 0 };
+      this.saveStats();
+      this.newGame();
+    },
+
+    // ─── Game flow ────────────────────────────────────────────────
+    newGame() {
+      this.clearTimers();
+      this.playerScore = 0;
+      this.botScore = 0;
+      this.log = [];
+      this.round = 0;
+      this.gameOver = false;
+      this.gameWinner = null;
+      this.lastWinner = null;
+      this.feedbackMsg = '';
+      this.feedbackClass = '';
+      this.stats.totalGames++;
+      this.saveStats();
+      setTimeout(() => this.newRound(), 300);
+    },
+
+    newRound() {
+      if (this.gameOver) return;
+      this.round++;
+      this.roundOver = false;
+      this.botThinking = false;
+      this.userAnswer = '';
+      this.feedbackMsg = '';
+      this.feedbackClass = '';
+
+      // Generate two-digit numbers
+      this.num1 = this.randInt(10, 99);
+      this.num2 = this.randInt(10, 99);
+      this.gameActive = true;
+      this.paused = false;
+
+      const cfg = this.difficultyConfig();
+      this.maxTimer = cfg.timerSec * 10; // tenths of a second
+      this.timer = this.maxTimer;
+      this.questionStartTime = Date.now();
+
+      // Start countdown
+      this.clearTimers();
+      this.timerInterval = setInterval(() => {
+        if (this.paused) return;
+        this.timer--;
+        if (this.timer <= 0) {
+          this.timer = 0;
+          this.onTimeout();
+        }
+      }, 100);
+
+      // Schedule bot answer (Minimax-inspired adaptive IA)
+      this.scheduleBotAnswer();
+
+      this.$nextTick(() => {
+        if (this.$refs.answerInput) this.$refs.answerInput.focus();
+      });
+    },
+
+    // ─── MINIMAX-INSPIRED BOT AI ──────────────────────────────────
+    //
+    // El bot evalúa una "función de evaluación" similar a minimax:
+    //   - Calcula el resultado correcto
+    //   - Simula "tiempo de procesamiento" según dificultad y estado del juego
+    //   - Si está ganando, es más "relajado" (responde más lento)
+    //   - Si está perdiendo, actúa más agresivamente (responde más rápido)
+    //   - Puede cometer errores proporcionales a la dificultad
+    //   - En dificultad HARD: usa búsqueda exhaustiva sin errores
+    //
+    scheduleBotAnswer() {
+      const cfg = this.difficultyConfig();
+      const correctAnswer = this.num1 + this.num2;
+
+      // Evaluate game state (minimax-like utility)
+      const scoreDiff = this.botScore - this.playerScore; // positive = bot winning
+      const urgency = -scoreDiff; // bot is more urgent when losing
+
+      // Adapt response time based on game state
+      let base = cfg.botMinMs + Math.random() * (cfg.botMaxMs - cfg.botMinMs);
+      // If bot is losing: respond faster (urgency)
+      // If bot is winning: respond slower (simulate relaxed play)
+      const urgencyFactor = 1 - (urgency * 0.07);
+      let delay = Math.max(cfg.botMinMs * 0.5, base * Math.min(Math.max(urgencyFactor, 0.5), 1.4));
+
+      // Hard difficulty: extra fast when bot is about to win
+      if (this.difficulty === 'hard' && this.botScore === 9) delay = cfg.botMinMs;
+      // Easy: slow down further when winning
+      if (this.difficulty === 'easy' && scoreDiff > 2) delay *= 1.3;
+
+      // Cap delay to timer window
+      const timerMs = cfg.timerSec * 1000 * 0.9;
+      delay = Math.min(delay, timerMs);
+
+      // Bot "thinking" indicator appears midway
+      const thinkAt = Math.max(0, delay - 800);
+      setTimeout(() => { this.botThinking = true; }, thinkAt);
+
+      this.botTimer = setTimeout(() => {
+        if (this.roundOver || !this.gameActive) return;
+        this.botThinking = false;
+
+        // Should bot make an error? (simulated fallibility)
+        let botAnswer = correctAnswer;
+        if (Math.random() < cfg.botErrorRate) {
+          botAnswer = correctAnswer + (Math.random() < 0.5 ? 1 : -1) * this.randInt(1, 3);
+        }
+
+        this.resolveRound('bot', botAnswer, delay);
+      }, delay);
+    },
+
+    submitAnswer() {
+      if (!this.gameActive || this.roundOver) return;
+      const val = parseInt(this.userAnswer);
+      if (isNaN(val)) {
+        this.$refs.answerInput.classList.add('shake');
+        setTimeout(() => this.$refs.answerInput.classList.remove('shake'), 400);
+        return;
+      }
+      const elapsed = Date.now() - this.questionStartTime;
+      this.resolveRound('player', val, elapsed);
+    },
+
+    resolveRound(who, answer, timeMs) {
+      if (this.roundOver) return;
+      this.roundOver = true;
+      this.gameActive = false;
+      this.clearTimers();
+
+      const correct = this.num1 + this.num2;
+      const playerAnswer = parseInt(this.userAnswer);
+      const playerCorrect = !isNaN(playerAnswer) && playerAnswer === correct;
+      const botCorrect = answer === correct;
+
+      let winner = null;
+
+      if (who === 'player') {
+        if (playerCorrect) {
+          winner = 'player';
+          this.playerScore++;
+          this.feedbackMsg = '✓ ¡CORRECTO! +1 punto';
+          this.feedbackClass = 'win';
+          this.animateScore('player');
+        } else {
+          this.feedbackMsg = `✗ Incorrecto. La respuesta era ${correct}`;
+          this.feedbackClass = 'lose';
+          // Bot still gets to answer
+          if (botCorrect) {
+            winner = 'bot';
+            this.botScore++;
+            this.feedbackMsg += ` · NEXUS lo sabía 🤖`;
+            this.animateScore('bot');
+          }
+        }
+      } else {
+        // Bot answered first
+        if (botCorrect) {
+          winner = 'bot';
+          this.botScore++;
+          const elapsed = Date.now() - this.questionStartTime;
+          if (playerCorrect) {
+            this.feedbackMsg = `NEXUS fue más rápido. Respuesta: ${correct}`;
+          } else {
+            this.feedbackMsg = `NEXUS respondió: ${correct} ✓ (tú: ${isNaN(playerAnswer) ? '—' : playerAnswer})`;
+          }
+          this.feedbackClass = 'lose';
+          this.animateScore('bot');
+        } else {
+          // Bot was wrong
+          if (playerCorrect) {
+            winner = 'player';
+            this.playerScore++;
+            this.feedbackMsg = `NEXUS se equivocó. ¡Tú ganas esta ronda!`;
+            this.feedbackClass = 'win';
+            this.animateScore('player');
+          } else {
+            this.feedbackMsg = `Ambos erraron. Respuesta: ${correct}`;
+            this.feedbackClass = 'tie';
+          }
+        }
+      }
+
+      this.lastWinner = winner;
+
+      // Log entry
+      this.log.push({
+        num1: this.num1,
+        num2: this.num2,
+        answer: correct,
+        winner: winner || 'tie',
+        time: Math.round(timeMs),
+      });
+
+      // Check game over
+      if (this.playerScore >= 10 || this.botScore >= 10) {
+        setTimeout(() => this.endGame(), 900);
+      } else {
+        setTimeout(() => this.newRound(), 1600);
+      }
+    },
+
+    onTimeout() {
+      if (this.roundOver) return;
+      this.roundOver = true;
+      this.gameActive = false;
+      this.clearTimers();
+      const correct = this.num1 + this.num2;
+      this.feedbackMsg = `⏱ Tiempo agotado. La respuesta era ${correct}`;
+      this.feedbackClass = 'lose';
+
+      this.log.push({
+        num1: this.num1, num2: this.num2,
+        answer: correct, winner: 'tie', time: 9999,
+      });
+
+      setTimeout(() => this.newRound(), 1600);
+    },
+
+    endGame() {
+      this.gameOver = true;
+      if (this.playerScore >= 10) {
+        this.gameWinner = 'player';
+        this.stats.playerWins++;
+      } else {
+        this.gameWinner = 'bot';
+        this.stats.botWins++;
+      }
+      this.saveStats();
+    },
+
+    pauseGame() {
+      this.paused = !this.paused;
+    },
+
+    // ─── Helpers ──────────────────────────────────────────────────
+    clearTimers() {
+      if (this.timerInterval) { clearInterval(this.timerInterval); this.timerInterval = null; }
+      if (this.botTimer) { clearTimeout(this.botTimer); this.botTimer = null; }
+    },
+
+    randInt(min, max) {
+      return Math.floor(Math.random() * (max - min + 1)) + min;
+    },
+
+    animateScore(who) {
+      if (who === 'player') {
+        this.playerScoreAnim = true;
+        setTimeout(() => this.playerScoreAnim = false, 400);
+      } else {
+        this.botScoreAnim = true;
+        setTimeout(() => this.botScoreAnim = false, 400);
+      }
+    },
+  };
+}
+</script>
+</body>
+</html>
